@@ -21,9 +21,11 @@
   },
   "scripts": {
     "prepare": "tsc",
-    "build": "tsc && tslint -p tsconfig.json && mocha",
-    "test": "mocha",
-    "mon": "nodemon -e ts --ignore \"**/*.d.ts\" --exec \"npm run build || exit 1\""
+    "build": "tsc && tslint -p tsconfig.json && npm run flutter:build && mocha",
+    "test": "npm run flutter:build && npm run flutter:test && mocha",
+    "mon": "npm run flutter:build && nodemon -e ts --ignore \"**/*.d.ts\" --exec \"npm run build || exit 1\"",
+    "flutter:build": "cd test/app/ && flutter build web --web-renderer html --source-maps || cd ../../",
+    "flutter:test": "cd test/app/ && flutter test || cd ../../"
   },
   "repository": {
     "type": "git",
