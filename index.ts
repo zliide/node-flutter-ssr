@@ -4,7 +4,9 @@ import { BlobStore, installBlobs } from './blobs.js'
 import { installFonts, scriptLoadingFonts } from './fonts.js'
 import { Semaphore, trackNetworkRequests, trackTimers } from './loading.js'
 
-export declare type TextMeasure = (font: string, text: string) => { height: number, width: number, descent: number }
+export type TextMeasure = (font: string, text: string) => { height: number, width: number, descent: number }
+
+type AbortSignal = { aborted: boolean }
 
 export class Renderer {
     #domCache: Map<string, { dom: JSDOM, lock: Promise<string>, semaphore: Semaphore }> | undefined
