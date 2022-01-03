@@ -44,6 +44,10 @@ export function installBlobs(window: any, blobs: BlobStore) {
             this.#buffer = buffers
         }
 
+        get size() {
+            return this.#buffer[0].byteLength
+        }
+
         arrayBuffer() {
             return Promise.resolve(this.#buffer[0])
         }
