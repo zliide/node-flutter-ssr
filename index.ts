@@ -2,7 +2,7 @@ import { FetchOptions, JSDOM, ResourceLoader, VirtualConsole } from 'jsdom'
 import { installCanvasRecorder, scriptPlayingRecordedCanvases } from 'canvas-recorder'
 import { BlobStore, installBlobs } from './blobs.js'
 import { installFonts, scriptLoadingFonts } from './fonts.js'
-import { Semaphore, trackNetworkRequests, trackTimers } from './loading.js'
+import { Semaphore, settled, trackNetworkRequests, trackTimers } from './loading.js'
 
 export type TextMeasure = (font: string, text: string) => { height: number, width: number, descent: number }
 
@@ -81,12 +81,7 @@ export class Renderer {
                     dom.window.location.href = location
                 }
 
-                do {
-                    if (signal?.aborted) {
-                        throw new Error('Rendering aborted while waiting for timers and network to settle.')
-                    }
-                    await new Promise<void>(resolve => dom.window.queueMicrotask(resolve))
-                } while (await semaphore.done())
+                await settled(dom.window, semaphore, signal)
 
                 const scriptTags = dom.window.document.getElementsByTagName('script')
                 while (scriptTags.length) {
@@ -310,3 +305,4 @@ function setWindowSize(window: any, size: { width: number, height: number }) {
     window.innerWidth = size.width
     window.innerHeight = size.height
 }
+

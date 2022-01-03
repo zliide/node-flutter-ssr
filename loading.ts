@@ -30,6 +30,18 @@ export class Semaphore {
     }
 }
 
+type AbortSignal = { aborted: boolean }
+
+export async function settled(window: any, semaphore: Semaphore, signal: AbortSignal | undefined) {
+    do {
+        if (signal?.aborted) {
+            throw new Error('Rendering aborted while waiting for timers and network to settle.')
+        }
+        await new Promise<void>(resolve => window.queueMicrotask(resolve))
+    } while (await semaphore.done())
+}
+
+
 interface Logger {
     trace(message: string, error?: unknown): void
     error(message: string, error?: unknown): void
