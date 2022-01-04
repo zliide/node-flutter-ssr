@@ -84,7 +84,8 @@ export class Renderer {
                 Array.from(dom.window.document.getElementsByTagName('script'))
                     .filter(scriptTag =>
                         scriptTag.getAttribute('type') === 'application/javascript'
-                        || scriptTag.getAttribute('type') === 'text/javascript')
+                        || scriptTag.getAttribute('type') === 'text/javascript'
+                        || scriptTag.text.includes('loadMainDartJs'))
                     .forEach(scriptTag => scriptTag.remove())
 
                 return dom.serialize()
