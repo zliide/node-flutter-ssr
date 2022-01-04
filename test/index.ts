@@ -5,17 +5,17 @@ import { Renderer } from '../index.js'
 
 describe('renderer', () => {
     describe('can render a skeleton app', () => {
+        const path = './test/app/build/web/'
         let server: { close: () => void } | undefined
         before(function (this) {
-            server = fileServer('./test/app/build/web/', 51746)
+            server = fileServer(path, 51746)
         })
         after(function (this) {
             server?.close()
         })
 
         const renderer = new Renderer(
-            () => readFile('./test/app/build/web/index.html'),
-            name => readFile('./test/app/build/web/' + name),
+            name => readFile(path + name),
             'http://[::1]:51746/', [], measureText)
         for (const testCase of [
             {
@@ -51,9 +51,9 @@ describe('renderer', () => {
                     await writeFile('test/error-result.html', markup)
                     throw e
                 }
-            })
+            }).slow(2000).timeout(10000)
         }
-    }).slow(2000).timeout(5000)
+    })
 })
 
 class Log {

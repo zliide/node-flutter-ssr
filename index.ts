@@ -13,14 +13,12 @@ export class Renderer {
     #logger = new LogProxy()
     #baseUrl
     #blockList
-    #indexFetcher
     #resourceFetcher
     #textMeasure
 
-    constructor(indexFetcher: () => Promise<Buffer>, resourceFetcher: (name: string) => Promise<Buffer>, baseUrl: string, blockList: string[], textMeasure: TextMeasure) {
+    constructor(resourceFetcher: (name: string) => Promise<Buffer>, baseUrl: string, blockList: string[], textMeasure: TextMeasure) {
         this.#baseUrl = baseUrl
         this.#blockList = blockList
-        this.#indexFetcher = indexFetcher
         this.#resourceFetcher = resourceFetcher
         this.#textMeasure = textMeasure
         this.#domCache = new Map<string, { dom: JSDOM, lock: Promise<string>, semaphore: Semaphore }>()
@@ -40,7 +38,7 @@ export class Renderer {
         const isMobile = userAgent.includes('Android') || userAgent.includes('iPhone') || userAgent.includes('Mobile')
         const semaphore = new Semaphore()
         const lock = Promise.resolve('')
-        const dom = new JSDOM(await this.#indexFetcher(), {
+        const dom = new JSDOM(await this.#resourceFetcher('index.html'), {
             virtualConsole: createConsole(this.#logger),
             resources: new CountingResourceLoader(userAgent, loader, semaphore),
             userAgent,
