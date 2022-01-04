@@ -83,10 +83,11 @@ export class Renderer {
 
                 await settled(dom.window, semaphore, signal)
 
-                const scriptTags = dom.window.document.getElementsByTagName('script')
-                while (scriptTags.length) {
-                    scriptTags.item(0)?.remove()
-                }
+                Array.from(dom.window.document.getElementsByTagName('script'))
+                    .filter(scriptTag =>
+                        scriptTag.getAttribute('type') === 'application/javascript'
+                        || scriptTag.getAttribute('type') === 'text/javascript')
+                    .forEach(scriptTag => scriptTag.remove())
 
                 return dom.serialize()
                     .replace('</head>', `<script type="application/javascript">\r\n${scriptLoadingFonts(dom.window)}</script>\r\n</head>`)
@@ -305,4 +306,3 @@ function setWindowSize(window: any, size: { width: number, height: number }) {
     window.innerWidth = size.width
     window.innerHeight = size.height
 }
-
