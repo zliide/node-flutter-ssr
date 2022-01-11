@@ -14,7 +14,7 @@
   "dependencies": {
     "jsdom": "19.0.0",
     "probe-image-size": "7.2.2",
-    "canvas-recorder": "git+https://github.com/zliide/node-canvas-recorder.git#593ab23dbd3b8483c0430875a00c0f72bb9721e5"
+    "canvas-recorder": "git+https://github.com/zliide/node-canvas-recorder.git#2fdefde9985d068567c0309bb9f7a3c5d44e5ee9"
   },
   "devDependencies": {
     "@types/jsdom": "^16.2.13",
