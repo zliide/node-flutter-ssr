@@ -48,6 +48,7 @@ export class Renderer {
             beforeParse: window => {
                 monkeyPatch(window, blobs, this.#textMeasure)
                 trackNetworkRequests(this.#logger, window, semaphore)
+                trackTimers(window, semaphore, timeout => timeout === 16 ? 0 : timeout < 2500 ? timeout : Number.POSITIVE_INFINITY)
                 trackImageLoading(window, semaphore)
                 setWindowSize(window, isMobile ? { width: 411, height: 731 } : { width: 1920, height: 1600 })
                 window.localStorage['flutter.ServerSideRendering'] = true

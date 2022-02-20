@@ -72,22 +72,27 @@ export function trackNetworkRequests(log: Logger, window: any, semaphore: Semaph
     }
 }
 
-export function trackTimers(window: any, semaphore: Semaphore) {
+export function trackTimers(window: any, semaphore: Semaphore, realTime?: (timeout: number) => number) {
     const activeTimers = new Set<number>()
     const oldSetTimeout = window.setTimeout
+    let neverHandle = 0
     window.setTimeout = function (this, handler: () => void, timeout: number) {
+        const realTimeout = realTime ? realTime(timeout) : timeout
+        if (realTimeout === Number.POSITIVE_INFINITY) {
+            return --neverHandle
+        }
         semaphore.increment()
         const handle = oldSetTimeout.bind(this)(() => {
             semaphore.decrement()
             activeTimers.delete(handle)
             handler()
-        }, timeout)
+        }, realTimeout)
         activeTimers.add(handle)
         return handle
     }
     const oldClearTimeout = window.clearTimeout
     window.clearTimeout = function (this, handle: number) {
-        if (handle && activeTimers.has(handle)) {
+        if (activeTimers.has(handle)) {
             semaphore.decrement()
             activeTimers.delete(handle)
         }
