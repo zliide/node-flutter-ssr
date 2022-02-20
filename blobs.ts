@@ -24,14 +24,11 @@ export class BlobStore {
         return this.#blobs.delete(url)
     }
 
-    async get(url: string) {
-        const blob = this.#blobs.get(url)
-        if (!blob) {
-            return
-        }
-        return Buffer.from(await blob.arrayBuffer())
+    get(url: string) {
+        return this.#blobs.get(url)
     }
 }
+
 function isBlob(obj: Blob | MediaSource): obj is Blob {
     return typeof (obj as any).size === 'number'
 }
@@ -74,14 +71,14 @@ export function installBlobs(window: any, blobs: BlobStore) {
 
     window.Image.prototype.decode = async function (this) {
         const u: string = this.src
-        const blob = await blobs.get(u)
-        const meta = blob ?
-            await probe(Readable.from(blob)) :
-            await probe(this.src, { headers: { 'user-agent': window.navigator.userAgent } } as any)
+        const blob = blobs.get(u)
         if (blob) {
-            this.src = `data:image/gif;base64,${blob.toString('base64')}`
+            const buffer = Buffer.from(await blob.arrayBuffer())
+            this.src = `data:image/gif;base64,${buffer.toString('base64')}`
+            assignMetadataToImage(this, await probe(Readable.from(buffer)))
+            return
         }
-        assignMetadataToImage(this, meta)
+        assignMetadataToImage(this, await probe(this.src, { headers: { 'user-agent': window.navigator.userAgent } } as any))
     }
 
     const innerElementFactory = window.document.createElement.bind(window.document)

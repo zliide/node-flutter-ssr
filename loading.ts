@@ -17,10 +17,7 @@ export class Semaphore {
             this.#resolve = undefined
         }
     }
-    async wait<T>(promise: Promise<T> | null) {
-        if (!promise) {
-            return
-        }
+    async wait<T>(promise: Promise<T>) {
         this.increment()
         try {
             return await promise
@@ -30,9 +27,7 @@ export class Semaphore {
     }
 }
 
-type AbortSignal = { aborted: boolean }
-
-export async function settled(window: any, semaphore: Semaphore, signal: AbortSignal | undefined) {
+export async function settled(window: any, semaphore: Semaphore, signal: { aborted: boolean } | undefined) {
     do {
         if (signal?.aborted) {
             throw new Error('Rendering aborted while waiting for timers and network to settle.')
@@ -40,7 +35,6 @@ export async function settled(window: any, semaphore: Semaphore, signal: AbortSi
         await new Promise<void>(resolve => window.queueMicrotask(resolve))
     } while (await semaphore.done())
 }
-
 
 interface Logger {
     trace(message: string, error?: unknown): void

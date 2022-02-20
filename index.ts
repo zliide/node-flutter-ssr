@@ -3,9 +3,33 @@ import { FetchOptions, JSDOM, ResourceLoader, VirtualConsole } from 'jsdom'
 import { BlobStore, installBlobs } from './blobs.js'
 import { installFonts, scriptLoadingFonts } from './fonts.js'
 import { Semaphore, settled, trackImageLoading, trackNetworkRequests, trackTimers } from './loading.js'
+import { app, middleware, mapFetch, wrapFetch } from './middleware.js'
 import { monkeyPatch } from './monkey.js'
 
 export type TextMeasure = (font: string, text: string) => { height: number, width: number, descent: number }
+
+const font = middleware({ init: installFonts })
+const canvasReorder = (textMeasure: TextMeasure) => middleware({ init: (window: any) => installCanvasRecorder(window, textMeasure) })
+const monkeyPatches = (textMeasure: TextMeasure) => middleware({ init: (window: any) => monkeyPatch(window, textMeasure) })
+const blobs = (baseUrl: string) => middleware({
+    state: () => new BlobStore(baseUrl),
+    resourceHandler: (url, options, store, inner) => mapFetch(url, options, () => store.get(url), async blob => Buffer.from(await blob.arrayBuffer()), inner),
+    init: installBlobs,
+})
+const loading = (logger: Logger) => middleware({
+    state: () => new Semaphore(),
+    resourceHandler: (url, options, semaphore, inner) => wrapFetch(p => semaphore.wait(p), inner(url, options)),
+    init: (window, semaphore) => {
+        window.__loaderSemaphore = semaphore
+        trackNetworkRequests(logger, window, semaphore)
+        trackTimers(window, semaphore, timeout => timeout === 16 ? 0 : timeout < 2500 ? timeout : Number.POSITIVE_INFINITY)
+        trackImageLoading(window, semaphore)
+    },
+})
+
+async function windowSettled(window: any, signal: { aborted: boolean } | undefined) {
+    await settled(window, window.__loaderSemaphore, signal)
+}
 
 type AbortSignal = { aborted: boolean }
 
@@ -33,32 +57,29 @@ export class Renderer {
         if (cached) {
             return cached
         }
-        const blobs = new BlobStore(this.#baseUrl)
-        const loader = new BlobResourceLoader(userAgent, blobs,
-            new FlutterAppResourceLoader(this.#logger, this.#baseUrl, userAgent, this.#resourceFetcher, this.#blockList))
         const isMobile = userAgent.includes('Android') || userAgent.includes('iPhone') || userAgent.includes('Mobile')
-        const semaphore = new Semaphore()
         const lock = Promise.resolve('')
-        const dom = new JSDOM(await this.#resourceFetcher('index.html'), {
-            virtualConsole: createConsole(this.#logger),
-            resources: new CountingResourceLoader(userAgent, loader, semaphore),
-            userAgent,
-            url: this.#baseUrl + '#' + initialUrl,
-            contentType: 'text/html',
-            runScripts: 'dangerously',
-            beforeParse: window => {
-                installFonts(window)
-                installCanvasRecorder(window, this.#textMeasure)
-                installBlobs(window, blobs)
-                monkeyPatch(window, this.#textMeasure)
-                trackNetworkRequests(this.#logger, window, semaphore)
-                trackTimers(window, semaphore, timeout => timeout === 16 ? 0 : timeout < 2500 ? timeout : Number.POSITIVE_INFINITY)
-                trackImageLoading(window, semaphore)
-                setWindowSize(window, isMobile ? { width: 411, height: 731 } : { width: 1920, height: 1600 })
-                window.localStorage['flutter.ServerSideRendering'] = true
-            },
-        })
-        return { dom, lock, semaphore }
+        const dom = new JSDOM(await this.#resourceFetcher('index.html'), app()
+            .use(font)
+            .use(blobs(this.#baseUrl))
+            .use(canvasReorder(this.#textMeasure))
+            .use(monkeyPatches(this.#textMeasure))
+            .use(loading(this.#logger))
+            .config(
+                {
+                    virtualConsole: createConsole(this.#logger),
+                    resources: new FlutterAppResourceLoader(this.#logger, this.#baseUrl, userAgent, this.#resourceFetcher, this.#blockList),
+                    userAgent,
+                    url: this.#baseUrl + '#' + initialUrl,
+                    contentType: 'text/html',
+                    runScripts: 'dangerously',
+                    beforeParse: window => {
+                        setWindowSize(window, isMobile ? { width: 411, height: 731 } : { width: 1920, height: 1600 })
+                        window.localStorage['flutter.ServerSideRendering'] = true
+                    },
+                }))
+
+        return { dom, lock }
     }
 
     #updateLock(userAgent: string, lock: Promise<string>) {
@@ -72,7 +93,7 @@ export class Renderer {
     }
 
     async render(log: Logger, userAgent: string, url: string, signal?: AbortSignal) {
-        const { lock, dom, semaphore } = await this.#getDom(userAgent, url)
+        const { lock, dom } = await this.#getDom(userAgent, url)
         const renderPromise = (async () => {
             try {
                 await lock
@@ -84,7 +105,7 @@ export class Renderer {
                     dom.window.location.href = location
                 }
 
-                await settled(dom.window, semaphore, signal)
+                await windowSettled(dom.window, signal)
 
                 Array.from(dom.window.document.getElementsByTagName('script'))
                     .filter(scriptTag =>
@@ -113,6 +134,11 @@ export class Renderer {
         await Promise.all(doms.map(d => d.lock))
         doms.forEach(d => d.dom.window.close())
     }
+}
+
+function setWindowSize(window: any, size: { width: number, height: number }) {
+    window.innerWidth = size.width
+    window.innerHeight = size.height
 }
 
 interface Logger {
@@ -161,16 +187,6 @@ function createConsole(logger: Logger) {
     return virtualConsole
 }
 
-const dummyGif = Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x00, 0x3b])
-const dummyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04,
-    0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64, 0x60, 0x00, 0x00, 0x00, 0x06, 0x00, 0x02, 0x30, 0x81, 0xd0, 0x2f,
-    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82])
-const dummyJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43, 0x00, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xc2, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xff, 0xc4, 0x00, 0x14, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x01, 0x3f, 0x10])
-
 class FlutterAppResourceLoader extends ResourceLoader {
     #logger
     #baseUrl
@@ -211,42 +227,12 @@ class FlutterAppResourceLoader extends ResourceLoader {
     }
 }
 
-class BlobResourceLoader extends ResourceLoader {
-    #inner
-    #blobs
-
-    constructor(userAgent: string, blobs: BlobStore, inner: ResourceLoader) {
-        super({ userAgent })
-        this.#blobs = blobs
-        this.#inner = inner
-    }
-
-    fetch(url: string, options: FetchOptions) {
-        return this.#blobs.get(url).then(blob => {
-            if (blob) {
-                return blob
-            }
-            return this.#inner.fetch(url, options)
-        }) as any
-    }
-}
-
-class CountingResourceLoader extends ResourceLoader {
-    #inner
-    #semaphore
-
-    constructor(userAgent: string, inner: ResourceLoader, semaphore: Semaphore) {
-        super({ userAgent })
-        this.#inner = inner
-        this.#semaphore = semaphore
-    }
-
-    fetch(url: string, options: FetchOptions) {
-        return this.#semaphore.wait(this.#inner.fetch(url, options)) as any
-    }
-}
-
-function setWindowSize(window: any, size: { width: number, height: number }) {
-    window.innerWidth = size.width
-    window.innerHeight = size.height
-}
+const dummyGif = Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x00, 0x3b])
+const dummyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04,
+    0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64, 0x60, 0x00, 0x00, 0x00, 0x06, 0x00, 0x02, 0x30, 0x81, 0xd0, 0x2f,
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82])
+const dummyJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43, 0x00, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xc2, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xff, 0xc4, 0x00, 0x14, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x01, 0x3f, 0x10])
