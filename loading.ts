@@ -94,3 +94,52 @@ export function trackTimers(window: any, semaphore: Semaphore) {
         oldClearTimeout.bind(this)(handle)
     }
 }
+
+export function trackImageLoading(window: any, semaphore: Semaphore) {
+    const innerElementFactory = window.document.createElement.bind(window.document)
+    window.document.createElement = (localName: string) => {
+        const inner = innerElementFactory(localName)
+        switch (localName.toLowerCase()) {
+            case 'img': {
+                let onLoad = () => { /**/ }
+                let onError = () => { /**/ }
+                const innerSrcGetter = inner.__lookupGetter__('src').bind(inner)
+                const innerSrcSetter = inner.__lookupSetter__('src').bind(inner)
+                inner.onload = () => {
+                    onLoad()
+                    semaphore.decrement()
+                }
+                inner.onerror = () => {
+                    onError()
+                    semaphore.decrement()
+                }
+                Object.defineProperties(inner, {
+                    src: {
+                        configurable: true,
+                        get() {
+                            return innerSrcGetter()
+                        },
+                        set(value: string) {
+                            semaphore.increment()
+                            innerSrcSetter(value)
+                        },
+                    },
+                    onload: {
+                        configurable: true,
+                        set(handler: () => void) {
+                            onLoad = handler
+                        },
+                    },
+                    onerror: {
+                        configurable: true,
+                        set(handler: () => void) {
+                            onError = handler
+                        },
+                    },
+                })
+                break
+            }
+        }
+        return inner
+    }
+}

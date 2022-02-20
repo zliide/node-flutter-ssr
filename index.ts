@@ -2,7 +2,7 @@ import { FetchOptions, JSDOM, ResourceLoader, VirtualConsole } from 'jsdom'
 import { installCanvasRecorder, scriptPlayingRecordedCanvases } from 'canvas-recorder'
 import { BlobStore, installBlobs } from './blobs.js'
 import { installFonts, scriptLoadingFonts } from './fonts.js'
-import { Semaphore, settled, trackNetworkRequests, trackTimers } from './loading.js'
+import { Semaphore, settled, trackImageLoading, trackNetworkRequests, trackTimers } from './loading.js'
 
 export type TextMeasure = (font: string, text: string) => { height: number, width: number, descent: number }
 
@@ -48,7 +48,7 @@ export class Renderer {
             beforeParse: window => {
                 monkeyPatch(window, blobs, this.#textMeasure)
                 trackNetworkRequests(this.#logger, window, semaphore)
-                trackTimers(window, semaphore)
+                trackImageLoading(window, semaphore)
                 setWindowSize(window, isMobile ? { width: 411, height: 731 } : { width: 1920, height: 1600 })
                 window.localStorage['flutter.ServerSideRendering'] = true
             },

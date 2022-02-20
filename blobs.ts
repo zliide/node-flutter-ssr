@@ -36,22 +36,36 @@ function isBlob(obj: Blob | MediaSource): obj is Blob {
     return typeof (obj as any).size === 'number'
 }
 
-export function installBlobs(window: any, blobs: BlobStore) {
-    class ArrayBufferBlob {
-        #buffer
+function assignMetadataToImage(image: any, meta: probe.ProbeResult) {
+    Object.defineProperties(image, {
+        naturalWidth: {
+            configurable: true,
+            value: meta.width,
+        },
+        naturalHeight: {
+            configurable: true,
+            value: meta.height,
+        },
+    })
+}
 
-        constructor(buffers: ArrayBuffer[]) {
-            this.#buffer = buffers
-        }
+class ArrayBufferBlob {
+    #buffer
 
-        get size() {
-            return this.#buffer[0].byteLength
-        }
-
-        arrayBuffer() {
-            return Promise.resolve(this.#buffer[0])
-        }
+    constructor(buffers: ArrayBuffer[]) {
+        this.#buffer = buffers
     }
+
+    get size() {
+        return this.#buffer[0].byteLength
+    }
+
+    arrayBuffer() {
+        return Promise.resolve(this.#buffer[0])
+    }
+}
+
+export function installBlobs(window: any, blobs: BlobStore) {
     window.Blob = ArrayBufferBlob as any
     const url = URL
     window.URL = url
@@ -67,11 +81,58 @@ export function installBlobs(window: any, blobs: BlobStore) {
         if (blob) {
             this.src = `data:image/gif;base64,${blob.toString('base64')}`
         }
-        Object.defineProperty(this, 'naturalWidth', {
-            value: meta.width,
-        })
-        Object.defineProperty(this, 'naturalHeight', {
-            value: meta.height,
-        })
+        assignMetadataToImage(this, meta)
+    }
+
+    const innerElementFactory = window.document.createElement.bind(window.document)
+    window.document.createElement = (localName: string) => {
+        const inner = innerElementFactory(localName)
+        switch (localName.toLowerCase()) {
+            case 'img': {
+                let onLoad = () => { /**/ }
+                let onError = () => { /**/ }
+                const innerSrcGetter = inner.__lookupGetter__('src').bind(inner)
+                const innerSrcSetter = inner.__lookupSetter__('src').bind(inner)
+                const innerOnLoad = inner.__lookupSetter__('onload').bind(inner)
+                const innerOnError = inner.__lookupSetter__('onerror').bind(inner)
+                Object.defineProperties(inner, {
+                    src: {
+                        configurable: true,
+                        get() {
+                            return innerSrcGetter()
+                        },
+                        set(value: string) {
+                            innerSrcSetter(value)
+                            if (value.startsWith('https://')) {
+                                probe(value, { headers: { 'user-agent': window.navigator.userAgent } } as any)
+                                    .then(meta => {
+                                        assignMetadataToImage(this, meta)
+                                        onLoad()
+                                    })
+                                    .catch(onError)
+                            } else {
+                                onLoad()
+                            }
+                        },
+                    },
+                    onload: {
+                        configurable: true,
+                        set(handler: () => void) {
+                            onLoad = handler
+                            innerOnLoad(handler)
+                        },
+                    },
+                    onerror: {
+                        configurable: true,
+                        set(handler: () => void) {
+                            onError = handler
+                            innerOnError(handler)
+                        },
+                    },
+                })
+                break
+            }
+        }
+        return inner
     }
 }
