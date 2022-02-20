@@ -64,6 +64,9 @@ export function installBlobs(window: any, blobs: BlobStore) {
         const meta = blob ?
             await probe(Readable.from(blob)) :
             await probe(this.src, { headers: { 'user-agent': window.navigator.userAgent } } as any)
+        if (blob) {
+            this.src = `data:image/gif;base64,${blob.toString('base64')}`
+        }
         Object.defineProperty(this, 'naturalWidth', {
             value: meta.width,
         })
