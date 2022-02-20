@@ -1,8 +1,9 @@
-import { FetchOptions, JSDOM, ResourceLoader, VirtualConsole } from 'jsdom'
 import { installCanvasRecorder, scriptPlayingRecordedCanvases } from 'canvas-recorder'
+import { FetchOptions, JSDOM, ResourceLoader, VirtualConsole } from 'jsdom'
 import { BlobStore, installBlobs } from './blobs.js'
 import { installFonts, scriptLoadingFonts } from './fonts.js'
 import { Semaphore, settled, trackImageLoading, trackNetworkRequests, trackTimers } from './loading.js'
+import { monkeyPatch } from './monkey.js'
 
 export type TextMeasure = (font: string, text: string) => { height: number, width: number, descent: number }
 
@@ -46,7 +47,10 @@ export class Renderer {
             contentType: 'text/html',
             runScripts: 'dangerously',
             beforeParse: window => {
-                monkeyPatch(window, blobs, this.#textMeasure)
+                installFonts(window)
+                installCanvasRecorder(window, this.#textMeasure)
+                installBlobs(window, blobs)
+                monkeyPatch(window, this.#textMeasure)
                 trackNetworkRequests(this.#logger, window, semaphore)
                 trackTimers(window, semaphore, timeout => timeout === 16 ? 0 : timeout < 2500 ? timeout : Number.POSITIVE_INFINITY)
                 trackImageLoading(window, semaphore)
@@ -240,66 +244,6 @@ class CountingResourceLoader extends ResourceLoader {
     fetch(url: string, options: FetchOptions) {
         return this.#semaphore.wait(this.#inner.fetch(url, options)) as any
     }
-}
-
-class PannerStub {
-}
-class AudioContextStub {
-    createPanner() { return new PannerStub() }
-    createStereoPanner() { return new PannerStub() }
-}
-class MediaElementAudioSourceNodeStub {
-}
-class GeolocationStub {
-}
-
-function monkeyPatch(window: any, blobs: BlobStore, textMeasure: TextMeasure) {
-    Object.defineProperty(window.navigator, 'vendor', {
-        value: 'Google Inc.',
-    })
-
-    installFonts(window)
-    installCanvasRecorder(window, textMeasure)
-    installBlobs(window, blobs)
-
-    const innerElementFactory = window.document.createElement.bind(window.document)
-    window.document.createElement = (localName: string) => {
-        const element = innerElementFactory(localName)
-        if (localName.toLowerCase() === 'p') {
-            element.getBoundingClientRect = () => {
-                const size = textMeasure(element.style.font, element.textContent)
-                return {
-                    x: 0,
-                    y: 0,
-                    bottom: size.height - size.descent,
-                    height: size.height,
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    width: 0,
-                }
-            }
-        }
-        return element
-    }
-
-    window.AudioContext = AudioContextStub
-    window.MediaElementAudioSourceNode = MediaElementAudioSourceNodeStub
-    window.navigator.geolocation = GeolocationStub
-    window.Element.prototype.attachShadow = function (this) {
-        const element = window.document.createElement('flt-element-host-node')
-        this.append(element)
-        return element
-    }
-    window.matchMedia = (media: any) => ({
-        media,
-        matches: false,
-        onchange: null,
-        addListener: () => { /**/ },
-    })
-    Object.defineProperty(window.navigator, 'languages', {
-        value: null,
-    })
 }
 
 function setWindowSize(window: any, size: { width: number, height: number }) {
