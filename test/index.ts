@@ -2,6 +2,8 @@ import assert from 'assert'
 import { readFile, writeFile } from 'fs/promises'
 import { createServer } from 'http'
 import { Renderer } from '../index.js'
+import { measureText } from './text.js'
+import { memoize } from 'canvas-recorder'
 
 describe('renderer', () => {
     describe('can render a skeleton app', () => {
@@ -16,7 +18,7 @@ describe('renderer', () => {
 
         const renderer = new Renderer(
             name => readFile(path + name),
-            'http://[::1]:51746/', [], measureText)
+            'http://[::1]:51746/', [], memoize(2000, measureText))
         for (const testCase of [
             {
                 uri: '', terms: [
@@ -84,15 +86,6 @@ class Log {
             console.error(error)
         }
     }
-}
-
-const fontSizeRegEx = /(^|\s)([0-9]+)px(\s|$)/
-
-function measureText(font: string, text: string) {
-    const fontSize = Number(fontSizeRegEx.exec(font)?.[2]) || 10
-    const descent = 0
-    const width = text.length * fontSize * 0.6
-    return { height: fontSize, width, descent }
 }
 
 function fileServer(path: string, port: number) {

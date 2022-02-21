@@ -12,8 +12,7 @@
   ],
   "files": [
     "*.js",
-    "*.d.ts",
-    "*.js.map"
+    "*.d.ts"
   ],
   "exports": {
     ".": "./index.js"
@@ -21,7 +20,7 @@
   "dependencies": {
     "jsdom": "19.0.0",
     "probe-image-size": "7.2.3",
-    "canvas-recorder": "git+https://github.com/zliide/node-canvas-recorder.git#1c21af3b3c5036c763d5e36eba8a35303e87b02c"
+    "canvas-recorder": "git+https://github.com/zliide/node-canvas-recorder.git#1506907e44fd1108af8fa0e40ee5c1fac5508caa"
   },
   "devDependencies": {
     "@types/jsdom": "^16.2.14",

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <script type="application/javascript">
+        const fontLoaders = [];
+        const _f0 = new FontFace('Roboto', 'url(https://fonts.gstatic.com/s/roboto/v29/KFOkCnqEu92Fr1MmgVxFIzIFKw.woff2)', {});
+        fontLoaders.push(_f0.load().then(function () { document.fonts.add(_f0); }).catch(function (e) { console.error('Error loading font Roboto'); console.error(e); }));
+        const _f1 = new FontFace('MaterialIcons', 'url(app/build/web/assets/fonts/MaterialIcons-Regular.otf)', {});
+        fontLoaders.push(_f1.load().then(function () { document.fonts.add(_f1); }).catch(function (e) { console.error('Error loading font MaterialIcons'); console.error(e); }));
+    </script>
+    <script>
+        const precision = 16
+        const typescript = true
+
+        const fonts = [
+            {
+                family: 'Roboto', sizes: [24, 28], weights: ['normal'],
+                alphabet: ' 0123456789!%/()?,.-;:£$€abcçĉdeéèêfghijklmnñoöpqrsßtuüvwxyzæøåABCĈDEFGHIJKLMNÑOÖPQRSTUÜVWXYZÆØÅ',
+            },
+            {
+                family: 'MaterialIcons', sizes: [24, 28], weights: ['normal'],
+                alphabet: String.fromCodePoint(32, 58751),
+            },
+        ]
+        const fallbacks = ['Arial', 'sans-serif']
+    </script>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #000;
+                color: #FFF;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <pre id="result"></pre>
+    <script type="application/javascript" src="../node_modules/canvas-recorder/utils/text-measure.js"></script>
+</body>
+
+</html>
