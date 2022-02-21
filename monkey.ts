@@ -19,20 +19,24 @@ export function monkeyPatch(window: any, textMeasure: TextMeasure) {
         value: 'Google Inc.',
     })
 
+    const brokenFontCss = new Map<string, string>()
     const innerElementFactory = window.document.createElement.bind(window.document)
     window.document.createElement = (localName: string) => {
         const element = innerElementFactory(localName)
         if (localName.toLowerCase() === 'p') {
-            const font = [
-                element.style.fontStyle ?? 'normal',
-                element.style.fontVariant ?? 'normal',
-                element.style.fontWeight ?? 'normal',
-                element.style.fontSize,
-                element.style.lineHeight && ('/' + element.style.lineHeight),
-                element.style.fontFamily,
-            ].filter(s => !!s).join(' ')
             element.getBoundingClientRect = () => {
-                const size = textMeasure(font, element.textContent)
+                const font = [
+                    element.style.fontStyle ?? 'normal',
+                    element.style.fontVariant ?? 'normal',
+                    element.style.fontWeight ?? 'normal',
+                    element.style.fontSize,
+                    element.style.lineHeight && ('/' + element.style.lineHeight),
+                    element.style.fontFamily,
+                ].filter(s => !!s).join(' ')
+                if (font) {
+                    brokenFontCss.set(element.style.font, font)
+                }
+                const size = textMeasure(font ?? brokenFontCss.get(element.style.font) ?? element.style.font, element.textContent)
                 return {
                     x: 0,
                     y: 0,
