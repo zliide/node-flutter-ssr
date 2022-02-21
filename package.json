@@ -41,7 +41,7 @@
     "ide-test": "nodemon -e ts --ignore \"**/*.d.ts\" --exec \"tsc || exit 1\"",
     "file-dep-dev": "nodemon -e ts --ignore \"**/*.d.ts\" --exec \"npm run prepare || exit 1\"",
     "mon": "npm run flutter:build && nodemon -e ts --ignore \"**/*.d.ts\" --exec \"npm run build || exit 1\"",
-    "flutter:build": "cd test/app/ && flutter build web --web-renderer html --source-maps || cd ../../",
+    "flutter:build": "cd test/app/ && flutter build web --profile --web-renderer html --source-maps || cd ../../",
     "flutter:test": "cd test/app/ && flutter test || cd ../../"
   },
   "repository": {
