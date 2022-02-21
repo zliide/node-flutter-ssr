@@ -23,8 +23,16 @@ export function monkeyPatch(window: any, textMeasure: TextMeasure) {
     window.document.createElement = (localName: string) => {
         const element = innerElementFactory(localName)
         if (localName.toLowerCase() === 'p') {
+            const font = [
+                element.style.fontStyle ?? 'normal',
+                element.style.fontVariant ?? 'normal',
+                element.style.fontWeight ?? 'normal',
+                element.style.fontSize,
+                element.style.lineHeight && ('/' + element.style.lineHeight),
+                element.style.fontFamily,
+            ].filter(s => !!s).join(' ')
             element.getBoundingClientRect = () => {
-                const size = textMeasure(element.style.font, element.textContent)
+                const size = textMeasure(font, element.textContent)
                 return {
                     x: 0,
                     y: 0,
