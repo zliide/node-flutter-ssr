@@ -19,7 +19,7 @@ export function monkeyPatch(window: any, textMeasure: TextMeasure) {
         value: 'Google Inc.',
     })
 
-    const brokenFontCss = new Map<string, string>()
+    const brokenFontCss = new Map<string, { font: string, size: number, height: number }>()
     const innerElementFactory = window.document.createElement.bind(window.document)
     window.document.createElement = (localName: string) => {
         const element = innerElementFactory(localName)
@@ -33,19 +33,22 @@ export function monkeyPatch(window: any, textMeasure: TextMeasure) {
                     element.style.lineHeight && ('/' + element.style.lineHeight),
                     element.style.fontFamily,
                 ].filter(s => !!s).join(' ')
+                const size = parseFloat(element.style.fontSize)
+                const height = parseFloat(element.style.lineHeight) || 1
+                const parsed = { font, size, height }
                 if (font) {
-                    brokenFontCss.set(element.style.font, font)
+                    brokenFontCss.set(element.style.font, parsed)
                 }
-                const size = textMeasure(font ?? brokenFontCss.get(element.style.font) ?? element.style.font, element.textContent)
+                const textSize = textMeasure(font ?? brokenFontCss.get(element.style.font)?.font ?? element.style.font, element.textContent)
                 return {
                     x: 0,
                     y: 0,
-                    bottom: size.height - size.descent,
-                    height: size.height,
+                    bottom: size * height,
+                    height: size * height,
                     left: 0,
-                    right: 0,
+                    right: textSize.width,
                     top: 0,
-                    width: 0,
+                    width: textSize.width,
                 }
             }
         }
