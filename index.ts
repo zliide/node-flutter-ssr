@@ -5,8 +5,13 @@ import { installFonts, scriptLoadingFonts } from './fonts.js'
 import { trackDocumentLoad, PageTaskTracker, trackImageLoading, trackNetworkRequests, trackTimers, wait } from './loading.js'
 import { app, middleware, mapFetch, wrapFetch } from './middleware.js'
 import { monkeyPatch } from './monkey.js'
+import { memoize as _memoize } from 'canvas-recorder'
 
 export type TextMeasure = (font: string, text: string) => { height: number, width: number, descent: number }
+
+export function memoize(maxTexts: number, textMeasure: TextMeasure): TextMeasure {
+    return _memoize(maxTexts, textMeasure)
+}
 
 const font = middleware({ init: installFonts })
 const canvasReorder = (textMeasure: TextMeasure) => middleware({ init: (window: any) => installCanvasRecorder(window, textMeasure) })
