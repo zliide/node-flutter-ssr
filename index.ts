@@ -2,7 +2,7 @@ import { installCanvasRecorder, scriptPlayingRecordedCanvases } from 'canvas-rec
 import { FetchOptions, JSDOM, ResourceLoader, VirtualConsole } from 'jsdom'
 import { BlobStore, installBlobs } from './blobs.js'
 import { installFonts, scriptLoadingFonts } from './fonts.js'
-import { Semaphore, settled, trackImageLoading, trackNetworkRequests, trackTimers } from './loading.js'
+import { trackDocumentLoad, PageTaskTracker, trackImageLoading, trackNetworkRequests, trackTimers, wait } from './loading.js'
 import { app, middleware, mapFetch, wrapFetch } from './middleware.js'
 import { monkeyPatch } from './monkey.js'
 
@@ -17,24 +17,25 @@ const blobs = (baseUrl: string) => middleware({
     init: installBlobs,
 })
 const loading = (logger: Logger) => middleware({
-    state: () => new Semaphore(),
-    resourceHandler: (url, options, semaphore, inner) => wrapFetch(p => semaphore.wait(p), inner(url, options)),
-    init: (window, semaphore) => {
-        window.__loaderSemaphore = semaphore
-        trackNetworkRequests(logger, window, semaphore)
-        trackTimers(window, semaphore, timeout => timeout === 16 ? 0 : timeout < 2500 ? timeout : Number.POSITIVE_INFINITY)
-        trackImageLoading(window, semaphore)
+    state: () => new PageTaskTracker(),
+    resourceHandler: (url, options, tracker, inner) => wrapFetch(p => wait(tracker, p), inner(url, options)),
+    init: (window, tracker) => {
+        window.__loadingTracker = tracker
+        trackDocumentLoad(window, tracker)
+        trackNetworkRequests(logger, window, tracker)
+        trackTimers(window, tracker, timeout => timeout === 16 ? 1 : timeout < 2500 ? timeout : Number.POSITIVE_INFINITY)
+        trackImageLoading(window, tracker)
     },
 })
 
 async function windowSettled(window: any, signal: { aborted: boolean } | undefined) {
-    await settled(window, window.__loaderSemaphore, signal)
+    await window.__loadingTracker.settled(signal)
 }
 
 type AbortSignal = { aborted: boolean }
 
 export class Renderer {
-    #domCache: Map<string, { dom: JSDOM, lock: Promise<string>, semaphore: Semaphore }> | undefined
+    #domCache: Map<string, { dom: JSDOM, lock: Promise<string> }> | undefined
     #logger = new LogProxy()
     #baseUrl
     #blockList
@@ -46,7 +47,7 @@ export class Renderer {
         this.#blockList = blockList
         this.#resourceFetcher = resourceFetcher
         this.#textMeasure = textMeasure
-        this.#domCache = new Map<string, { dom: JSDOM, lock: Promise<string>, semaphore: Semaphore }>()
+        this.#domCache = new Map<string, { dom: JSDOM, lock: Promise<string> }>()
     }
 
     async #getDom(userAgent: string, initialUrl: string) {

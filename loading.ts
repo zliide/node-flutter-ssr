@@ -1,13 +1,66 @@
-export class Semaphore {
+interface Tracker {
+    increment(): void
+    decrement(): void
+}
+
+export async function wait<T>(tracker: Tracker, promise: Promise<T>) {
+    tracker.increment()
+    try {
+        return await promise
+    } finally {
+        tracker.decrement()
+    }
+}
+
+export class PageTaskTracker implements Tracker {
+    semaphore = new Semaphore()
+    #stuffHappened = false
+
+    async settled(signal?: { aborted: boolean } | undefined) {
+        let ioHappened
+        let ioHandled
+        do {
+            if (signal?.aborted) {
+                throw new Error('Rendering aborted while waiting for timers and network to settle.')
+            }
+            ioHappened = await this.semaphore.checkForMoreWork()
+            ioHandled = await this.#microTasks()
+        } while (ioHappened || ioHandled)
+    }
+
+    async #microTasks() {
+        await new Promise<void>(resolve => setTimeout(resolve, 0))
+        const stuffHappened = this.#stuffHappened
+        this.#stuffHappened = false
+        return stuffHappened
+    }
+
+    increment() {
+        this.#stuffHappened = true
+        this.semaphore.increment()
+    }
+    decrement() {
+        this.semaphore.decrement()
+    }
+}
+
+class Semaphore implements Tracker {
     #count = 0
     #resolve: ((stuffDone: boolean) => void) | undefined
     #promise: Promise<boolean> | undefined
 
-    done() { return this.#promise ?? Promise.resolve(false) }
+    checkForMoreWork() {
+        if (this.#promise) {
+            return this.#promise
+        }
+        return Promise.resolve(false)
+    }
 
     increment() {
         if (++this.#count === 1) {
-            this.#promise = new Promise<boolean>(resolve => this.#resolve = resolve)
+            this.#promise = new Promise<boolean>(resolve => {
+                this.#resolve = resolve
+            })
         }
     }
     decrement() {
@@ -17,23 +70,6 @@ export class Semaphore {
             this.#resolve = undefined
         }
     }
-    async wait<T>(promise: Promise<T>) {
-        this.increment()
-        try {
-            return await promise
-        } finally {
-            this.decrement()
-        }
-    }
-}
-
-export async function settled(window: any, semaphore: Semaphore, signal: { aborted: boolean } | undefined) {
-    do {
-        if (signal?.aborted) {
-            throw new Error('Rendering aborted while waiting for timers and network to settle.')
-        }
-        await new Promise<void>(resolve => window.queueMicrotask(resolve))
-    } while (await semaphore.done())
 }
 
 interface Logger {
@@ -41,32 +77,39 @@ interface Logger {
     error(message: string, error?: unknown): void
 }
 
-export function trackNetworkRequests(log: Logger, window: any, semaphore: Semaphore) {
+export function trackNetworkRequests(log: Logger, window: any, tracker: Tracker) {
     const oldXhrOpen = window.XMLHttpRequest.prototype.open
     window.XMLHttpRequest.prototype.open = function (this, method: any, requestUrl: any) {
-        semaphore.increment()
+        tracker.increment()
         log.trace('Request BEGIN: ' + requestUrl)
         this.addEventListener('loadend', () => {
-            semaphore.decrement()
+            tracker.decrement()
             log.trace('Request END:   ' + requestUrl)
         })
         this.addEventListener('abort', function (this: any, _event: any) {
-            semaphore.decrement()
+            tracker.decrement()
             log.error('Request END:   ' + requestUrl + ' (aborted)')
         })
         this.addEventListener('error', function (this: any, _event: any) {
-            semaphore.decrement()
+            tracker.decrement()
             log.error('Request END:   ' + requestUrl + ' (error)')
         })
         this.addEventListener('timeout', function (this: any, _event: any) {
-            semaphore.decrement()
+            tracker.decrement()
             log.error('Request END:   ' + requestUrl + ' (timeout)')
         })
         return oldXhrOpen.bind(this)(method, requestUrl)
     }
 }
 
-export function trackTimers(window: any, semaphore: Semaphore, realTime?: (timeout: number) => number) {
+export function trackDocumentLoad(window: any, tracker: Tracker) {
+    tracker.increment()
+    window.document.addEventListener('load', () => {
+        tracker.decrement()
+    })
+}
+
+export function trackTimers(window: any, tracker: Tracker, realTime?: (timeout: number) => number) {
     const activeTimers = new Set<number>()
     const oldSetTimeout = window.setTimeout
     let neverHandle = 0
@@ -75,11 +118,11 @@ export function trackTimers(window: any, semaphore: Semaphore, realTime?: (timeo
         if (realTimeout === Number.POSITIVE_INFINITY) {
             return --neverHandle
         }
-        semaphore.increment()
+        tracker.increment()
         const handle = oldSetTimeout.bind(this)(() => {
-            semaphore.decrement()
             activeTimers.delete(handle)
             handler()
+            tracker.decrement()
         }, realTimeout)
         activeTimers.add(handle)
         return handle
@@ -87,14 +130,14 @@ export function trackTimers(window: any, semaphore: Semaphore, realTime?: (timeo
     const oldClearTimeout = window.clearTimeout
     window.clearTimeout = function (this, handle: number) {
         if (activeTimers.has(handle)) {
-            semaphore.decrement()
+            tracker.decrement()
             activeTimers.delete(handle)
         }
         oldClearTimeout.bind(this)(handle)
     }
 }
 
-export function trackImageLoading(window: any, semaphore: Semaphore) {
+export function trackImageLoading(window: any, tracker: Tracker) {
     const innerElementFactory = window.document.createElement.bind(window.document)
     window.document.createElement = (localName: string) => {
         const inner = innerElementFactory(localName)
@@ -106,11 +149,11 @@ export function trackImageLoading(window: any, semaphore: Semaphore) {
                 const innerSrcSetter = inner.__lookupSetter__('src').bind(inner)
                 inner.onload = () => {
                     onLoad()
-                    semaphore.decrement()
+                    tracker.decrement()
                 }
                 inner.onerror = () => {
                     onError()
-                    semaphore.decrement()
+                    tracker.decrement()
                 }
                 Object.defineProperties(inner, {
                     src: {
@@ -119,7 +162,7 @@ export function trackImageLoading(window: any, semaphore: Semaphore) {
                             return innerSrcGetter()
                         },
                         set(value: string) {
-                            semaphore.increment()
+                            tracker.increment()
                             innerSrcSetter(value)
                         },
                     },
