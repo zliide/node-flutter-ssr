@@ -135,6 +135,10 @@ export function trackTimers(window: any, tracker: Tracker, realTime?: (timeout: 
         }
         oldClearTimeout.bind(this)(handle)
     }
+
+    window.setInterval = function (this) {
+        return --neverHandle
+    }
 }
 
 export function trackImageLoading(window: any, tracker: Tracker) {
