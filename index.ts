@@ -119,6 +119,11 @@ export class Renderer {
                         || scriptTag.getAttribute('type') === 'text/javascript'
                         || scriptTag.text.includes('loadMainDartJs'))
                     .forEach(scriptTag => scriptTag.remove())
+                Array.from(dom.window.document.getElementsByTagName('link'))
+                    .filter(relTag =>
+                        relTag.getAttribute('rel') === 'preload'
+                        || relTag.getAttribute('as') === 'script')
+                    .forEach(relTag => relTag.remove())
 
                 return dom.serialize()
                     .replace('</head>', `<script type="application/javascript">\r\n${scriptLoadingFonts(dom.window)}</script>\r\n</head>`)
