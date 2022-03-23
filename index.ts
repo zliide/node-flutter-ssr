@@ -182,7 +182,7 @@ class LogProxy {
 function createConsole(logger: Logger) {
     const virtualConsole = new VirtualConsole()
     virtualConsole.on('jsdomError', (e: any) => {
-        logger.error('Javascript error during server-side rendering', e)
+        logger.error('Javascript error during server-side rendering', decycleError(e))
     })
     virtualConsole.on('error', message => {
         logger.error('Error from javascript during server-side rendering: ' + message)
@@ -203,6 +203,13 @@ function createConsole(logger: Logger) {
         logger.trace('Dir from javascript during server-side rendering: ' + message)
     })
     return virtualConsole
+}
+
+function decycleError(error: any) {
+    if (error?.dartException) {
+        delete error.dartException.$thrownJsError
+    }
+    return error
 }
 
 class FlutterAppResourceLoader extends ResourceLoader {
