@@ -6,6 +6,7 @@ import { trackDocumentLoad, PageTaskTracker, trackImageLoading, trackNetworkRequ
 import { app, middleware, mapFetch, wrapFetch } from './middleware.js'
 import { monkeyPatch } from './monkey.js'
 import { memoize as _memoize } from 'canvas-recorder'
+import { createHash } from 'crypto'
 
 export type TextMeasure = (font: string, text: string) => { height: number, width: number, descent: number }
 
@@ -40,7 +41,7 @@ async function windowSettled(window: any, signal: { aborted: boolean } | undefin
 type AbortSignal = { aborted: boolean }
 
 export class Renderer {
-    #domCache: Map<string, { dom: JSDOM, lock: Promise<string> }> | undefined
+    #domCache: Map<string, { dom: JSDOM, lock: Promise<string>, locked: boolean, indexHash: string }> | undefined
     #logger = new LogProxy()
     #baseUrl
     #blockList
@@ -52,20 +53,28 @@ export class Renderer {
         this.#blockList = blockList
         this.#resourceFetcher = resourceFetcher
         this.#textMeasure = textMeasure
-        this.#domCache = new Map<string, { dom: JSDOM, lock: Promise<string> }>()
+        this.#domCache = new Map()
     }
 
     async #getDom(userAgent: string, initialUrl: string) {
         if (!this.#domCache) {
             throw new Error('Renderer closed')
         }
+        const index = await this.#resourceFetcher('index.html')
+        const indexHash = createHash('sha1').update(index).digest('hex')
         const cached = this.#domCache.get(userAgent)
-        if (cached) {
+        if (cached && cached.indexHash === indexHash) {
             return cached
         }
-        const isMobile = userAgent.includes('Android') || userAgent.includes('iPhone') || userAgent.includes('Mobile')
         const lock = Promise.resolve('')
-        const dom = new JSDOM(await this.#resourceFetcher('index.html'), app()
+        const dom = this.#makeDom(userAgent, initialUrl, index)
+        this.#domCache.set(userAgent, { dom, lock, locked: false, indexHash })
+        return { dom, lock }
+    }
+
+    #makeDom(userAgent: string, initialUrl: string, index: Buffer) {
+        const isMobile = userAgent.includes('Android') || userAgent.includes('iPhone') || userAgent.includes('Mobile')
+        return new JSDOM(index, app()
             .use(font)
             .use(blobs(this.#baseUrl))
             .use(canvasReorder(this.#textMeasure))
@@ -84,8 +93,6 @@ export class Renderer {
                         window.localStorage['flutter.ServerSideRendering'] = true
                     },
                 }))
-
-        return { dom, lock }
     }
 
     #updateLock(userAgent: string, lock: Promise<string>) {

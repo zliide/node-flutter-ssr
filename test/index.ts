@@ -21,21 +21,22 @@ describe('renderer', () => {
             'http://[::1]:51746/', [], memoize(2000, measureText))
         for (const testCase of [
             {
-                uri: '', terms: [
+                uri: '', uniqueTerms: [
                     'Sample Items',
                     'SampleItem 1',
                     'SampleItem 2',
                     'SampleItem 3',
                 ],
+                terms: ['SampleItem'],
             },
             {
-                uri: '/sample_item', terms: [
+                uri: '/sample_item', uniqueTerms: [
                     'Item Detail',
                     'More Information Here',
                 ],
             },
             {
-                uri: '/settings', terms: [
+                uri: '/settings', uniqueTerms: [
                     'Settings',
                     'System Theme',
                 ],
@@ -46,7 +47,10 @@ describe('renderer', () => {
                 const markup = await renderer.render(log, 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', testCase.uri)
                 try {
                     assert.ok(log.errorFree, `Errors was logged rendering ${testCase.uri}`)
-                    for (const term of testCase.terms) {
+                    for (const term of testCase.uniqueTerms ?? []) {
+                        assert.strictEqual(markup.match(new RegExp(term, 'g'))?.length, 1, `${testCase.uri} does not contain exactly one "${term}"`)
+                    }
+                    for (const term of testCase.terms ?? []) {
                         assert.ok(markup.includes(term), `${testCase.uri} does not contain "${term}"`)
                     }
                 } catch (e) {
